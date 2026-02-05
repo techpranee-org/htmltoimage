@@ -13,7 +13,7 @@ services:
       - ./app:/app
     working_dir: /app
     command: >
-      -c "npm install --prefer-offline --no-audit && node server.js"
+      sh -c "npm install --prefer-offline --no-audit && node server.js"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3200/health"]
       interval: 10s
