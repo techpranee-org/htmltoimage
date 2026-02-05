@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  playwright-renderer:
+    image: mcr.microsoft.com/playwright:v1.40.0-focal
+    container_name: playwright-renderer
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - ./app:/app
+      - /app/node_modules
+    working_dir: /app
+    command: >
+      sh -c "npm install && node server.js"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rendered-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: playwright-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - rendered-network
+    restart: unless-stopped
+
+networks:
+  rendered-network:
+    driver: bridge

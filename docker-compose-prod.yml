@@ -1,0 +1,73 @@
+# Production-ready docker-compose with monitoring and scaling
+# This file includes health checks, resource limits, and proper error handling
+
+version: '3.8'
+
+services:
+  playwright-renderer:
+    image: mcr.microsoft.com/playwright:v1.40.0-focal
+    container_name: playwright-renderer
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./app:/app
+      - /app/node_modules
+    working_dir: /app
+    command: >
+      sh -c "npm install --only=production && node server.js"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: on-failure:3
+    networks:
+      - rendered-network
+    depends_on:
+      - redis
+    # Production resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    labels:
+      - "description=Playwright HTML to Image Rendering Service"
+      - "version=1.0"
+
+  redis:
+    image: redis:7-alpine
+    container_name: playwright-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure:3
+    networks:
+      - rendered-network
+    # Production resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+networks:
+  rendered-network:
+    driver: bridge
