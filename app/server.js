@@ -19,6 +19,17 @@ function resolveViewport(options = {}, defaults = { width: 1280, height: 720 }) 
   };
 }
 
+function normalizeOptions(bodyOptions = {}, body = {}) {
+  return {
+    ...bodyOptions,
+    viewportWidth: bodyOptions.viewportWidth ?? body.viewportWidth,
+    viewportHeight: bodyOptions.viewportHeight ?? body.viewportHeight,
+    width: bodyOptions.width ?? body.width,
+    height: bodyOptions.height ?? body.height,
+    format: bodyOptions.format ?? bodyOptions.type ?? body.format ?? body.type,
+  };
+}
+
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
@@ -79,16 +90,17 @@ app.get('/status', (req, res) => {
  * Body: { html: string, options?: { width, height, format } }
  * Returns: { imageBase64: string, contentType: string, size: number }
  */
-app.post('/render', async (req, res) => {
+app.post('/render', upload.none(), async (req, res) => {
   try {
     const { html, options = {} } = req.body;
+    const normalizedOptions = normalizeOptions(options, req.body);
 
     if (!html) {
       return res.status(400).json({ error: 'HTML content is required' });
     }
 
-    const { format = 'png', waitFor = 1000 } = options;
-    const viewport = resolveViewport(options, { width: 1280, height: 720 });
+    const { format = 'png', waitFor = 1000 } = normalizedOptions;
+    const viewport = resolveViewport(normalizedOptions, { width: 1280, height: 720 });
 
     const requestId = uuidv4();
     console.log(`[${requestId}] Rendering HTML to ${format}...`);
@@ -151,16 +163,17 @@ app.post('/render', async (req, res) => {
  * Body: { url: string, options?: { width, height, format } }
  * Returns: { imageBase64: string, contentType: string, size: number }
  */
-app.post('/render-url', async (req, res) => {
+app.post('/render-url', upload.none(), async (req, res) => {
   try {
     const { url, options = {} } = req.body;
+    const normalizedOptions = normalizeOptions(options, req.body);
 
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
     }
 
-    const { format = 'png', waitFor = 2000 } = options;
-    const viewport = resolveViewport(options, { width: 1280, height: 720 });
+    const { format = 'png', waitFor = 2000 } = normalizedOptions;
+    const viewport = resolveViewport(normalizedOptions, { width: 1280, height: 720 });
 
     const requestId = uuidv4();
     console.log(`[${requestId}] Rendering URL: ${url}`);
@@ -224,9 +237,10 @@ app.post('/render-url', async (req, res) => {
  * Body: { html: string, options?: { ... } }
  * Returns: { jobId: string }
  */
-app.post('/render-async', async (req, res) => {
+app.post('/render-async', upload.none(), async (req, res) => {
   try {
     const { html, options = {} } = req.body;
+    const normalizedOptions = normalizeOptions(options, req.body);
 
     if (!html) {
       return res.status(400).json({ error: 'HTML content is required' });
@@ -242,7 +256,7 @@ app.post('/render-async', async (req, res) => {
     );
 
     // Process asynchronously
-    processRenderJob(jobId, html, options);
+    processRenderJob(jobId, html, normalizedOptions);
 
     res.json({
       success: true,
