@@ -22,6 +22,7 @@ services:
       retries: 5
     networks:
       - rendered-network
+      - nginx-proxy-manager_default
     restart: unless-stopped
 
   redis:
@@ -36,3 +37,5 @@ services:
 networks:
   rendered-network:
     driver: bridge
+  nginx-proxy-manager_default:
+    external: true
