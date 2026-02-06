@@ -9,6 +9,16 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+function resolveViewport(options = {}, defaults = { width: 1280, height: 720 }) {
+  const width = options.viewportWidth ?? options.width ?? defaults.width;
+  const height = options.viewportHeight ?? options.height ?? defaults.height;
+
+  return {
+    width: Math.max(1, parseInt(width, 10)),
+    height: Math.max(1, parseInt(height, 10)),
+  };
+}
+
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
@@ -77,19 +87,15 @@ app.post('/render', async (req, res) => {
       return res.status(400).json({ error: 'HTML content is required' });
     }
 
-    const {
-      width = 1280,
-      height = 720,
-      format = 'png',
-      waitFor = 1000,
-    } = options;
+    const { format = 'png', waitFor = 1000 } = options;
+    const viewport = resolveViewport(options, { width: 1280, height: 720 });
 
     const requestId = uuidv4();
     console.log(`[${requestId}] Rendering HTML to ${format}...`);
 
     const browserInstance = await getBrowser();
     const context = await browserInstance.newContext({
-      viewport: { width: parseInt(width), height: parseInt(height) },
+      viewport,
     });
 
     const page = await context.newPage();
@@ -106,6 +112,7 @@ app.post('/render', async (req, res) => {
     const screenshot = await page.screenshot({
       fullPage: false,
       type: format,
+      clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
     });
 
     // Convert to Base64
@@ -124,8 +131,8 @@ app.post('/render', async (req, res) => {
         contentType: `image/${format}`,
         size: screenshot.length,
         format,
-        width,
-        height,
+        width: viewport.width,
+        height: viewport.height,
         requestId,
       },
     });
@@ -152,19 +159,15 @@ app.post('/render-url', async (req, res) => {
       return res.status(400).json({ error: 'URL is required' });
     }
 
-    const {
-      width = 1280,
-      height = 720,
-      format = 'png',
-      waitFor = 2000,
-    } = options;
+    const { format = 'png', waitFor = 2000 } = options;
+    const viewport = resolveViewport(options, { width: 1280, height: 720 });
 
     const requestId = uuidv4();
     console.log(`[${requestId}] Rendering URL: ${url}`);
 
     const browserInstance = await getBrowser();
     const context = await browserInstance.newContext({
-      viewport: { width: parseInt(width), height: parseInt(height) },
+      viewport,
     });
 
     const page = await context.newPage();
@@ -181,6 +184,7 @@ app.post('/render-url', async (req, res) => {
     const screenshot = await page.screenshot({
       fullPage: false,
       type: format,
+      clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
     });
 
     // Convert to Base64
@@ -199,8 +203,8 @@ app.post('/render-url', async (req, res) => {
         contentType: `image/${format}`,
         size: screenshot.length,
         format,
-        width,
-        height,
+        width: viewport.width,
+        height: viewport.height,
         url,
         requestId,
       },
@@ -293,12 +297,8 @@ app.get('/download/:jobId', async (req, res) => {
 // Process render job asynchronously
 async function processRenderJob(jobId, html, options) {
   try {
-    const {
-      width = 1280,
-      height = 720,
-      format = 'png',
-      waitFor = 1000,
-    } = options;
+    const { format = 'png', waitFor = 1000 } = options;
+    const viewport = resolveViewport(options, { width: 1280, height: 720 });
 
     // Update status
     await redisClient.setEx(
@@ -309,7 +309,7 @@ async function processRenderJob(jobId, html, options) {
 
     const browserInstance = await getBrowser();
     const context = await browserInstance.newContext({
-      viewport: { width: parseInt(width), height: parseInt(height) },
+      viewport,
     });
 
     const page = await context.newPage();
@@ -319,7 +319,11 @@ async function processRenderJob(jobId, html, options) {
       await page.waitForTimeout(parseInt(waitFor));
     }
 
-    const screenshot = await page.screenshot({ fullPage: false, type: format });
+    const screenshot = await page.screenshot({
+      fullPage: false,
+      type: format,
+      clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
+    });
 
     // Save image
     const imagePath = path.join(uploadsDir, `${jobId}.${format}`);
@@ -335,8 +339,8 @@ async function processRenderJob(jobId, html, options) {
         completedAt: new Date().toISOString(),
         size: screenshot.length,
         format,
-        width,
-        height,
+        width: viewport.width,
+        height: viewport.height,
         downloadUrl: `/download/${jobId}`,
         imageBase64: screenshot.toString('base64'),
       })
