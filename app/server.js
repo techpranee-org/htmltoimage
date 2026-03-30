@@ -6,6 +6,7 @@ const redis = require("redis");
 const fs = require("fs");
 const path = require("path");
 const cors = require("cors");
+require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -95,15 +96,88 @@ app.get("/status", (req, res) => {
  * Body: { html: string, options?: { width, height, format } }
  * Returns: { imageBase64: string, contentType: string, size: number }
  */
+// app.post("/render", upload.none(), async (req, res) => {
+//   try {
+//     const { html, options = {} } = req.body;
+//     const normalizedOptions = normalizeOptions(options, req.body);
+
+//     if (!html) {
+//       return res.status(400).json({ error: "HTML content is required" });
+//     }
+
+//     const { format = "png", waitFor = 1000 } = normalizedOptions;
+//     const viewport = resolveViewport(normalizedOptions, {
+//       width: 1280,
+//       height: 720,
+//     });
+
+//     const requestId = uuidv4();
+//     console.log(`[${requestId}] Rendering HTML to ${format}...`);
+
+//     const browserInstance = await getBrowser();
+//     const context = await browserInstance.newContext({
+//       viewport,
+//     });
+
+//     const page = await context.newPage();
+
+//     // Set HTML content
+//     await page.setContent(html, { waitUntil: "networkidle" });
+
+//     // Wait for any dynamic content
+//     if (waitFor > 0) {
+//       await page.waitForTimeout(parseInt(waitFor));
+//     }
+
+//     // Take screenshot
+//     const screenshot = await page.screenshot({
+//       fullPage: false,
+//       type: format,
+//       clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
+//     });
+
+//     // Convert to Base64
+//     const imageBase64 = screenshot.toString("base64");
+
+//     // Clean up
+//     await page.close();
+//     await context.close();
+
+//     console.log(
+//       `[${requestId}] Rendered successfully - Size: ${screenshot.length} bytes`,
+//     );
+
+//     res.json({
+//       success: true,
+//       data: {
+//         imageBase64,
+//         contentType: `image/${format}`,
+//         size: screenshot.length,
+//         format,
+//         width: viewport.width,
+//         height: viewport.height,
+//         requestId,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Render Error:", error.message);
+//     res.status(500).json({
+//       error: "Failed to render HTML",
+//       message: error.message,
+//     });
+//   }
+// });
+
 app.post("/render", upload.none(), async (req, res) => {
   try {
     const { html, options = {} } = req.body;
-    const normalizedOptions = normalizeOptions(options, req.body);
 
     if (!html) {
       return res.status(400).json({ error: "HTML content is required" });
     }
 
+    // Normalize options
+    const normalizedOptions = normalizeOptions(options, req.body);
     const { format = "png", waitFor = 1000 } = normalizedOptions;
     const viewport = resolveViewport(normalizedOptions, {
       width: 1280,
@@ -113,45 +187,56 @@ app.post("/render", upload.none(), async (req, res) => {
     const requestId = uuidv4();
     console.log(`[${requestId}] Rendering HTML to ${format}...`);
 
+    // Launch or reuse browser
     const browserInstance = await getBrowser();
-    const context = await browserInstance.newContext({
-      viewport,
-    });
-
+    const context = await browserInstance.newContext({ viewport });
     const page = await context.newPage();
 
-    // Set HTML content
+    // Load HTML content
     await page.setContent(html, { waitUntil: "networkidle" });
 
-    // Wait for any dynamic content
     if (waitFor > 0) {
       await page.waitForTimeout(parseInt(waitFor));
     }
 
-    // Take screenshot
-    const screenshot = await page.screenshot({
-      fullPage: false,
-      type: format,
-      clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
-    });
+    // Render to file buffer
+    let fileBuffer;
+    if (format.toLowerCase() === "pdf") {
+      fileBuffer = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        width: `${viewport.width}px`,
+        height: `${viewport.height}px`,
+      });
+    } else {
+      fileBuffer = await page.screenshot({
+        fullPage: false,
+        type: format,
+        clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
+      });
+    }
 
     // Convert to Base64
-    const imageBase64 = screenshot.toString("base64");
+    const fileBase64 = fileBuffer.toString("base64");
 
     // Clean up
     await page.close();
     await context.close();
 
     console.log(
-      `[${requestId}] Rendered successfully - Size: ${screenshot.length} bytes`,
+      `[${requestId}] Rendered successfully - Size: ${fileBuffer.length} bytes`,
     );
 
+    // Return response
     res.json({
       success: true,
       data: {
-        imageBase64,
-        contentType: `image/${format}`,
-        size: screenshot.length,
+        fileBase64,
+        contentType:
+          format.toLowerCase() === "pdf"
+            ? "application/pdf"
+            : `image/${format}`,
+        size: fileBuffer.length,
         format,
         width: viewport.width,
         height: viewport.height,
