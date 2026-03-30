@@ -1,15 +1,19 @@
-const express = require('express');
-const playwright = require('playwright');
-const multer = require('multer');
-const { v4: uuidv4 } = require('uuid');
-const redis = require('redis');
-const fs = require('fs');
-const path = require('path');
+const express = require("express");
+const playwright = require("playwright");
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
+const redis = require("redis");
+const fs = require("fs");
+const path = require("path");
+const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-function resolveViewport(options = {}, defaults = { width: 1280, height: 720 }) {
+function resolveViewport(
+  options = {},
+  defaults = { width: 1280, height: 720 },
+) {
   const width = options.viewportWidth ?? options.width ?? defaults.width;
   const height = options.viewportHeight ?? options.height ?? defaults.height;
 
@@ -30,12 +34,13 @@ function normalizeOptions(bodyOptions = {}, body = {}) {
   };
 }
 
+app.use(cors()); // allow all origin
 // Middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb' }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb" }));
 
 // File uploads directory
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -47,14 +52,14 @@ let redisClient;
 (async () => {
   redisClient = redis.createClient({
     socket: {
-      host: process.env.REDIS_HOST || 'redis',
+      host: process.env.REDIS_HOST || "redis",
       port: process.env.REDIS_PORT || 6379,
-    }
+    },
   });
 
-  redisClient.on('error', (err) => console.log('Redis Client Error', err));
+  redisClient.on("error", (err) => console.log("Redis Client Error", err));
   await redisClient.connect();
-  console.log('✓ Connected to Redis');
+  console.log("✓ Connected to Redis");
 })();
 
 // Browser instance management
@@ -63,23 +68,23 @@ let browser;
 async function getBrowser() {
   if (!browser) {
     browser = await playwright.chromium.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
-    console.log('✓ Browser launched');
+    console.log("✓ Browser launched");
   }
   return browser;
 }
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // Status endpoint
-app.get('/status', (req, res) => {
+app.get("/status", (req, res) => {
   res.json({
-    status: 'running',
-    service: 'Playwright HTML Renderer',
+    status: "running",
+    service: "Playwright HTML Renderer",
     timestamp: new Date().toISOString(),
   });
 });
@@ -90,17 +95,20 @@ app.get('/status', (req, res) => {
  * Body: { html: string, options?: { width, height, format } }
  * Returns: { imageBase64: string, contentType: string, size: number }
  */
-app.post('/render', upload.none(), async (req, res) => {
+app.post("/render", upload.none(), async (req, res) => {
   try {
     const { html, options = {} } = req.body;
     const normalizedOptions = normalizeOptions(options, req.body);
 
     if (!html) {
-      return res.status(400).json({ error: 'HTML content is required' });
+      return res.status(400).json({ error: "HTML content is required" });
     }
 
-    const { format = 'png', waitFor = 1000 } = normalizedOptions;
-    const viewport = resolveViewport(normalizedOptions, { width: 1280, height: 720 });
+    const { format = "png", waitFor = 1000 } = normalizedOptions;
+    const viewport = resolveViewport(normalizedOptions, {
+      width: 1280,
+      height: 720,
+    });
 
     const requestId = uuidv4();
     console.log(`[${requestId}] Rendering HTML to ${format}...`);
@@ -113,7 +121,7 @@ app.post('/render', upload.none(), async (req, res) => {
     const page = await context.newPage();
 
     // Set HTML content
-    await page.setContent(html, { waitUntil: 'networkidle' });
+    await page.setContent(html, { waitUntil: "networkidle" });
 
     // Wait for any dynamic content
     if (waitFor > 0) {
@@ -128,13 +136,15 @@ app.post('/render', upload.none(), async (req, res) => {
     });
 
     // Convert to Base64
-    const imageBase64 = screenshot.toString('base64');
+    const imageBase64 = screenshot.toString("base64");
 
     // Clean up
     await page.close();
     await context.close();
 
-    console.log(`[${requestId}] Rendered successfully - Size: ${screenshot.length} bytes`);
+    console.log(
+      `[${requestId}] Rendered successfully - Size: ${screenshot.length} bytes`,
+    );
 
     res.json({
       success: true,
@@ -149,9 +159,9 @@ app.post('/render', upload.none(), async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Render Error:', error.message);
+    console.error("Render Error:", error.message);
     res.status(500).json({
-      error: 'Failed to render HTML',
+      error: "Failed to render HTML",
       message: error.message,
     });
   }
@@ -163,17 +173,20 @@ app.post('/render', upload.none(), async (req, res) => {
  * Body: { url: string, options?: { width, height, format } }
  * Returns: { imageBase64: string, contentType: string, size: number }
  */
-app.post('/render-url', upload.none(), async (req, res) => {
+app.post("/render-url", upload.none(), async (req, res) => {
   try {
     const { url, options = {} } = req.body;
     const normalizedOptions = normalizeOptions(options, req.body);
 
     if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
+      return res.status(400).json({ error: "URL is required" });
     }
 
-    const { format = 'png', waitFor = 2000 } = normalizedOptions;
-    const viewport = resolveViewport(normalizedOptions, { width: 1280, height: 720 });
+    const { format = "png", waitFor = 2000 } = normalizedOptions;
+    const viewport = resolveViewport(normalizedOptions, {
+      width: 1280,
+      height: 720,
+    });
 
     const requestId = uuidv4();
     console.log(`[${requestId}] Rendering URL: ${url}`);
@@ -186,7 +199,7 @@ app.post('/render-url', upload.none(), async (req, res) => {
     const page = await context.newPage();
 
     // Navigate to URL
-    await page.goto(url, { waitUntil: 'networkidle' });
+    await page.goto(url, { waitUntil: "networkidle" });
 
     // Wait for any dynamic content
     if (waitFor > 0) {
@@ -201,13 +214,15 @@ app.post('/render-url', upload.none(), async (req, res) => {
     });
 
     // Convert to Base64
-    const imageBase64 = screenshot.toString('base64');
+    const imageBase64 = screenshot.toString("base64");
 
     // Clean up
     await page.close();
     await context.close();
 
-    console.log(`[${requestId}] Rendered successfully - Size: ${screenshot.length} bytes`);
+    console.log(
+      `[${requestId}] Rendered successfully - Size: ${screenshot.length} bytes`,
+    );
 
     res.json({
       success: true,
@@ -223,9 +238,9 @@ app.post('/render-url', upload.none(), async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Render URL Error:', error.message);
+    console.error("Render URL Error:", error.message);
     res.status(500).json({
-      error: 'Failed to render URL',
+      error: "Failed to render URL",
       message: error.message,
     });
   }
@@ -237,13 +252,13 @@ app.post('/render-url', upload.none(), async (req, res) => {
  * Body: { html: string, options?: { ... } }
  * Returns: { jobId: string }
  */
-app.post('/render-async', upload.none(), async (req, res) => {
+app.post("/render-async", upload.none(), async (req, res) => {
   try {
     const { html, options = {} } = req.body;
     const normalizedOptions = normalizeOptions(options, req.body);
 
     if (!html) {
-      return res.status(400).json({ error: 'HTML content is required' });
+      return res.status(400).json({ error: "HTML content is required" });
     }
 
     const jobId = uuidv4();
@@ -252,7 +267,10 @@ app.post('/render-async', upload.none(), async (req, res) => {
     await redisClient.setEx(
       `job:${jobId}`,
       3600, // 1 hour TTL
-      JSON.stringify({ status: 'pending', createdAt: new Date().toISOString() })
+      JSON.stringify({
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      }),
     );
 
     // Process asynchronously
@@ -264,8 +282,8 @@ app.post('/render-async', upload.none(), async (req, res) => {
       statusUrl: `/render-async/${jobId}`,
     });
   } catch (error) {
-    console.error('Async Render Error:', error.message);
-    res.status(500).json({ error: 'Failed to queue render job' });
+    console.error("Async Render Error:", error.message);
+    res.status(500).json({ error: "Failed to queue render job" });
   }
 });
 
@@ -273,19 +291,19 @@ app.post('/render-async', upload.none(), async (req, res) => {
  * Get async render result
  * GET /render-async/:jobId
  */
-app.get('/render-async/:jobId', async (req, res) => {
+app.get("/render-async/:jobId", async (req, res) => {
   try {
     const { jobId } = req.params;
     const jobData = await redisClient.get(`job:${jobId}`);
 
     if (!jobData) {
-      return res.status(404).json({ error: 'Job not found or expired' });
+      return res.status(404).json({ error: "Job not found or expired" });
     }
 
     const job = JSON.parse(jobData);
     res.json(job);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to get job status' });
+    res.status(500).json({ error: "Failed to get job status" });
   }
 });
 
@@ -293,32 +311,35 @@ app.get('/render-async/:jobId', async (req, res) => {
  * Download rendered image
  * GET /download/:jobId
  */
-app.get('/download/:jobId', async (req, res) => {
+app.get("/download/:jobId", async (req, res) => {
   try {
     const { jobId } = req.params;
     const imagePath = path.join(uploadsDir, `${jobId}.png`);
 
     if (!fs.existsSync(imagePath)) {
-      return res.status(404).json({ error: 'Image not found' });
+      return res.status(404).json({ error: "Image not found" });
     }
 
     res.download(imagePath, `rendered-${jobId}.png`);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to download image' });
+    res.status(500).json({ error: "Failed to download image" });
   }
 });
 
 // Process render job asynchronously
 async function processRenderJob(jobId, html, options) {
   try {
-    const { format = 'png', waitFor = 1000 } = options;
+    const { format = "png", waitFor = 1000 } = options;
     const viewport = resolveViewport(options, { width: 1280, height: 720 });
 
     // Update status
     await redisClient.setEx(
       `job:${jobId}`,
       3600,
-      JSON.stringify({ status: 'processing', createdAt: new Date().toISOString() })
+      JSON.stringify({
+        status: "processing",
+        createdAt: new Date().toISOString(),
+      }),
     );
 
     const browserInstance = await getBrowser();
@@ -327,7 +348,7 @@ async function processRenderJob(jobId, html, options) {
     });
 
     const page = await context.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle' });
+    await page.setContent(html, { waitUntil: "networkidle" });
 
     if (waitFor > 0) {
       await page.waitForTimeout(parseInt(waitFor));
@@ -348,7 +369,7 @@ async function processRenderJob(jobId, html, options) {
       `job:${jobId}`,
       3600,
       JSON.stringify({
-        status: 'completed',
+        status: "completed",
         createdAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
         size: screenshot.length,
@@ -356,8 +377,8 @@ async function processRenderJob(jobId, html, options) {
         width: viewport.width,
         height: viewport.height,
         downloadUrl: `/download/${jobId}`,
-        imageBase64: screenshot.toString('base64'),
-      })
+        imageBase64: screenshot.toString("base64"),
+      }),
     );
 
     await page.close();
@@ -370,27 +391,27 @@ async function processRenderJob(jobId, html, options) {
       `job:${jobId}`,
       3600,
       JSON.stringify({
-        status: 'failed',
+        status: "failed",
         error: error.message,
         createdAt: new Date().toISOString(),
         failedAt: new Date().toISOString(),
-      })
+      }),
     );
   }
 }
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled Error:', err);
+  console.error("Unhandled Error:", err);
   res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    error: "Internal server error",
+    message: process.env.NODE_ENV === "development" ? err.message : undefined,
   });
 });
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM signal received: closing HTTP server');
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM signal received: closing HTTP server");
   if (browser) {
     await browser.close();
   }
