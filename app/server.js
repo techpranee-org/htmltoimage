@@ -195,6 +195,13 @@ app.post("/render", upload.none(), async (req, res) => {
     // Load HTML content
     await page.setContent(html, { waitUntil: "networkidle" });
 
+    await page.emulateMedia({ media: "screen" });
+    await page.evaluate(async () => {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+    });
+
     if (waitFor > 0) {
       await page.waitForTimeout(parseInt(waitFor));
     }
@@ -205,8 +212,7 @@ app.post("/render", upload.none(), async (req, res) => {
       fileBuffer = await page.pdf({
         format: "A4",
         printBackground: true,
-        width: `${viewport.width}px`,
-        height: `${viewport.height}px`,
+        preferCSSPageSize: true,
       });
     } else {
       fileBuffer = await page.screenshot({
